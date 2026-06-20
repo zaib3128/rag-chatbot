@@ -5,14 +5,20 @@ import shutil
 import tempfile
 
 import streamlit as st
-from dotenv import load_dotenv
+
+# On Streamlit Cloud secrets load automatically
+# On local machine .env file is used
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_groq import ChatGroq
-
-load_dotenv()
 
 
 @st.cache_resource
@@ -20,10 +26,12 @@ def load_models():
     embeddings = HuggingFaceEmbeddings(
         model_name="sentence-transformers/all-MiniLM-L6-v2"
     )
-    # Groq is free and 10x faster than Ollama
+    # st.secrets works on Streamlit Cloud
+    # os.environ works locally via .env
+    api_key = st.secrets.get("GROQ_API_KEY") or os.environ.get("GROQ_API_KEY")
     llm = ChatGroq(
         model="llama-3.1-8b-instant",
-        api_key=os.environ.get("GROQ_API_KEY"),
+        api_key=api_key,
     )
     return embeddings, llm
 
