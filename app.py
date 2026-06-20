@@ -17,7 +17,7 @@ except ImportError:
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 from langchain_groq import ChatGroq
 
 
@@ -77,10 +77,10 @@ if uploaded_file:
             ).split_documents(pages)
 
             db = Chroma.from_documents(
-                chunks,
-                embeddings,
-                persist_directory="./chroma_db",
-            )
+    documents=chunks,
+    embedding=embeddings,
+    # no persist_directory — stays in memory, works on cloud
+)
 
             st.session_state.db = db
             st.session_state.pdf_name = uploaded_file.name
