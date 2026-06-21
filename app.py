@@ -1,13 +1,12 @@
 import os
 import gc
 import stat
+import uuid
 import shutil
 import tempfile
 
 import streamlit as st
 
-# On Streamlit Cloud secrets load automatically
-# On local machine .env file is used
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -26,8 +25,6 @@ def load_models():
     embeddings = HuggingFaceEmbeddings(
         model_name="sentence-transformers/all-MiniLM-L6-v2"
     )
-    # st.secrets works on Streamlit Cloud
-    # os.environ works locally via .env
     api_key = st.secrets.get("GROQ_API_KEY") or os.environ.get("GROQ_API_KEY")
     llm = ChatGroq(
         model="llama-3.1-8b-instant",
@@ -49,38 +46,40 @@ if uploaded_file:
     if st.button("Process PDF"):
         with st.spinner("Reading, chunking, and embedding..."):
 
-            # Windows fix: release ChromaDB file lock before deleting
+            # Release old ChromaDB from memory completely
             if "db" in st.session_state:
                 del st.session_state.db
+                gc.collect()
 
+            # Delete persisted folder if it exists (Windows fix included)
             if os.path.exists("./chroma_db"):
-                import stat
-                import gc
-                gc.collect()  # force Python to release file handles
-
-                # onerror handler forces Windows to release read-only locks
                 def force_delete(func, path, _):
                     os.chmod(path, stat.S_IWRITE)
                     func(path)
-
                 shutil.rmtree("./chroma_db", onerror=force_delete)
 
+            # Save uploaded file to disk temporarily
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
                 tmp.write(uploaded_file.read())
                 pdf_path = tmp.name
 
+            # Load → chunk
             pages = PyPDFLoader(pdf_path).load()
-
             chunks = RecursiveCharacterTextSplitter(
                 chunk_size=1000,
                 chunk_overlap=200,
             ).split_documents(pages)
 
+            # THIS IS THE FIX: unique collection name every upload
+            # Without this, Chroma reuses "langchain" collection and
+            # accumulates chunks from all previous PDFs
+            collection_name = f"pdf_{uuid.uuid4().hex[:8]}"
+
             db = Chroma.from_documents(
-    documents=chunks,
-    embedding=embeddings,
-    # no persist_directory — stays in memory, works on cloud
-)
+                documents=chunks,
+                embedding=embeddings,
+                collection_name=collection_name,  # ← fresh collection each time
+            )
 
             st.session_state.db = db
             st.session_state.pdf_name = uploaded_file.name
@@ -96,7 +95,6 @@ if "db" in st.session_state:
 
     if question:
         with st.spinner("Searching and thinking..."):
-
             docs = st.session_state.db.similarity_search(question, k=3)
             context = "\n\n".join(doc.page_content for doc in docs)
 
@@ -110,7 +108,7 @@ Question: {question}
 
 Answer:"""
 
-            answer = llm.invoke(prompt).content  # .content extracts text from Groq response
+            answer = llm.invoke(prompt).content
 
         st.subheader("Answer")
         st.write(answer)
