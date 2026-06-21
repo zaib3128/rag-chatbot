@@ -41,13 +41,13 @@ st.caption("Upload any PDF and ask questions about it")
 uploaded_file = st.file_uploader("Upload a PDF", type="pdf")
 
 if uploaded_file:
-    # If user uploaded a DIFFERENT file, clear everything from previous session
-    if st.session_state.get("pdf_name") != uploaded_file.name:
+    # Only clear if a PREVIOUS pdf existed AND the new one is different
+    if "pdf_name" in st.session_state and st.session_state["pdf_name"] != uploaded_file.name:
         for key in ["db", "pdf_name"]:
             if key in st.session_state:
                 del st.session_state[key]
         gc.collect()
-        st.rerun()   # rerun immediately so old answer box disappears
+        st.rerun()
 
     st.success(f"Uploaded: {uploaded_file.name}")
 
